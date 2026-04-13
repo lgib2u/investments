@@ -188,7 +188,6 @@ function ChatPanel(){
         <div style={{maxWidth:"90%",padding:"6px 9px",fontSize:12,lineHeight:1.5,background:m.role==="user"?C.bg3:C.bg2,border:`1px solid ${C.border}`,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{m.content}</div>
       </div>)}
       {loading&&<div style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}}>
-        <div style={{fontSize:9,color:C.muted,marginBottom:2,textTransform:"uppercase",letterSpacing:1}}>Claude</div>
         <div style={{fontSize:9,color:C.muted,marginBottom:2,textTransform:"uppercase",letterSpacing:1}}>HORDE</div>
         <div style={{background:C.bg2,border:`1px solid ${C.border}`,padding:"6px 9px",color:C.muted,fontSize:12}}>thinking...</div>
       </div>}
