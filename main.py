@@ -35,7 +35,13 @@ INVESTMENTS_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Investments — Horde</title>
+<link rel="icon" href="/favicon.ico"/>
+<link rel="apple-touch-icon" sizes="192x192" href="/logo192.png"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&display=swap" rel="stylesheet"/>
+<meta name="theme-color" content="#0d1117"/>
+<meta name="description" content="Investments — personal trading dashboard. Portfolio positions, trade history, and AI signals."/>
+<title>Investments</title>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -140,13 +146,14 @@ function TradesTab({data}){
 function SignalsTab({data}){
   if(!data.length)return<div style={{color:C.muted,padding:20,textAlign:"center",fontSize:12}}>No signals</div>;
   return<table style={{width:"100%",borderCollapse:"collapse"}}>
-    <thead><tr>{["Time","Ticker","Score","Traded","Skip Reason"].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
+    <thead><tr>{["Time","Ticker","Score","Traded","Signal","Skip Reason"].map(h=><th key={h} style={TH}>{h}</th>)}</tr></thead>
     <tbody>{data.map((s,i)=>{const sc=parseFloat(s.score),traded=s.traded==="True"||s.traded===true;return<tr key={i} onMouseEnter={e=>hov(e,true)} onMouseLeave={e=>hov(e,false)}>
-      <td style={TD}>{s.timestamp?s.timestamp.slice(0,16).replace("T"," "):"—"}</td>
-      <td style={{...TD,color:C.blue,fontWeight:"bold"}}>{s.ticker||"—"}</td>
-      <td style={{...TD,color:sc>=0.7?C.green:sc>=0.4?C.yellow:C.red}}>{fmt(sc,3)}</td>
-      <td style={{...TD,color:traded?C.green:C.muted}}>{traded?"Y":"—"}</td>
-      <td style={{...TD,color:C.muted,fontSize:11}}>{s.skip_reason||"—"}</td>
+      <td style={{...TD,whiteSpace:"nowrap"}}>{s.timestamp?s.timestamp.slice(0,16).replace("T"," "):"—"}</td>
+      <td style={{...TD,color:C.blue,fontWeight:"bold",whiteSpace:"nowrap"}}>{s.ticker||"—"}</td>
+      <td style={{...TD,color:sc>=0.7?C.green:sc>=0.4?C.yellow:C.red,whiteSpace:"nowrap"}}>{fmt(sc,2)}</td>
+      <td style={{...TD,color:traded?C.green:C.muted,whiteSpace:"nowrap"}}>{traded?"✓":"—"}</td>
+      <td style={{...TD,color:C.text,fontSize:11,maxWidth:320}}>{s.reason||"—"}</td>
+      <td style={{...TD,color:C.muted,fontSize:11,whiteSpace:"nowrap"}}>{s.skip_reason||"—"}</td>
     </tr>;})}</tbody></table>;
 }
 
@@ -201,25 +208,54 @@ function ChatPanel(){
   </div>;
 }
 
-// ── Login ──────────────────────────────────────────────────────────────────────
+// \u2500\u2500 Login \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+const GS={
+  overlay:{position:"fixed",inset:0,background:"#0d1117",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999},
+  box:{background:"#161b22",border:"1px solid #30363d",padding:"32px",width:300,fontFamily:"'Fira Code',monospace"},
+  logo:{width:48,height:48,display:"block",margin:"0 auto 16px"},
+  title:{color:"#58a6ff",fontSize:13,letterSpacing:2,marginBottom:20,fontFamily:"inherit",fontWeight:700},
+  input:{width:"100%",background:"#21262d",border:"1px solid #30363d",color:"#c9d1d9",padding:"8px 12px",fontFamily:"inherit",fontSize:13,marginBottom:10,outline:"none",display:"block"},
+  inputErr:{width:"100%",background:"#21262d",border:"1px solid #f85149",color:"#c9d1d9",padding:"8px 12px",fontFamily:"inherit",fontSize:13,marginBottom:10,outline:"none",display:"block"},
+  btn:{width:"100%",background:"#58a6ff",color:"#0d1117",border:"none",padding:"8px",cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:"bold"},
+  err:{color:"#f85149",fontSize:12,marginTop:8,minHeight:16,fontFamily:"inherit"},
+  locked:{color:"#f85149",fontSize:12,marginTop:8,lineHeight:1.6},
+};
+const MAX_UI_ATTEMPTS=3;
 function Login({onAuth}){
-  const [pw,setPw]=useState(""); const [err,setErr]=useState("");
+  const [pw,setPw]=useState("");
+  const [attempts,setAttempts]=useState(0);
+  const [err,setErr]=useState("");
+  const [locked,setLocked]=useState(false);
+  const [shake,setShake]=useState(false);
   const submit=async()=>{
-    const r=await fetch("/api/investments/auth",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
-    const d=await r.json();
-    if(d.ok){sessionStorage.setItem("inv_auth","1");onAuth();}else setErr("Wrong password");
+    if(locked||attempts>=MAX_UI_ATTEMPTS)return;
+    try{
+      const r=await fetch("/api/investments/auth",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
+      const d=await r.json();
+      if(d.locked){setLocked(true);return;}
+      if(d.ok){sessionStorage.setItem("inv_auth","1");onAuth();return;}
+      const next=attempts+1;
+      setAttempts(next);
+      setErr(next>=MAX_UI_ATTEMPTS?"too many attempts.":`incorrect. ${MAX_UI_ATTEMPTS-next} attempt${MAX_UI_ATTEMPTS-next!==1?"s":""} remaining.`);
+      setShake(true);setPw("");
+      setTimeout(()=>setShake(false),400);
+    }catch{setErr("cannot reach server.");}
   };
-  return<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100}}>
-    <div style={{background:C.bg2,border:`1px solid ${C.border}`,padding:32,width:300}}>
-      <h2 style={{color:C.blue,marginBottom:20,fontSize:13,letterSpacing:2,fontFamily:"inherit"}}>// INVESTMENTS</h2>
-      <input style={{width:"100%",background:C.bg3,border:`1px solid ${C.border}`,color:C.text,padding:"8px 12px",fontFamily:"inherit",fontSize:13,marginBottom:10,outline:"none"}}
-        type="password" placeholder="password" value={pw} autoFocus onChange={e=>setPw(e.target.value)} onKeyDown={e=>e.key==="Enter"&&submit()}/>
-      <button style={{width:"100%",background:C.blue,color:C.bg,border:"none",padding:8,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:"bold"}} onClick={submit}>ENTER</button>
-      <div style={{color:C.red,fontSize:12,marginTop:8,minHeight:16}}>{err}</div>
+  const isBlocked=locked||attempts>=MAX_UI_ATTEMPTS;
+  return<div style={GS.overlay}>
+    <div style={GS.box}>
+      <img src="/logo192.png" alt="" style={GS.logo}/>
+      <div style={GS.title}>// INVESTMENTS</div>
+      {isBlocked?<div style={GS.locked}>{locked?"system locked — ssh to restore access.":"too many attempts — try again later."}</div>:(
+        <>
+          <input style={shake?GS.inputErr:GS.input} type="password" placeholder="password" value={pw} autoFocus onChange={e=>{setPw(e.target.value);setErr("");}} onKeyDown={e=>e.key==="Enter"&&submit()}/>
+          <button style={GS.btn} onClick={submit}>ENTER</button>
+          <div style={GS.err}>{err}</div>
+        </>
+      )}
     </div>
   </div>;
 }
-
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 function Dashboard(){
   const [tab,setTab]=useState("positions");
@@ -248,10 +284,15 @@ function Dashboard(){
     <div style={{background:C.bg2,borderBottom:`1px solid ${C.border}`,padding:"9px 14px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
       <span style={{fontSize:14,color:C.blue,letterSpacing:2,textTransform:"uppercase"}}>// Investments</span>
       <span style={{color:C.muted,fontSize:11}}>updated {updated}</span>
-      <button onClick={load} style={{marginLeft:"auto",background:C.bg3,border:`1px solid ${C.border}`,color:C.muted,padding:"3px 10px",cursor:"pointer",fontFamily:"inherit",fontSize:11}}>↺</button>
+      <button onClick={load} style={{marginLeft:"auto",background:C.bg3,border:`1px solid ${C.border}`,color:C.muted,padding:"3px 10px",cursor:"pointer",fontFamily:"inherit",fontSize:11}}>↺ refresh</button>
+      <button onClick={async()=>{const r=await fetch("/api/investments/sync",{method:"POST"});const d=await r.json();load();alert(d.synced?`Synced ${d.synced} closed trade(s): ${d.tickers.join(", ")}`:"No new closes found.");}} style={{background:C.bg3,border:`1px solid ${C.border}`,color:C.muted,padding:"3px 10px",cursor:"pointer",fontFamily:"inherit",fontSize:11}}>⟳ sync alpaca</button>
     </div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:7,padding:"8px 12px",flexShrink:0}}>
-      {[{l:"Win Rate",v:`${wr}%`,c:wr>=50?C.green:C.red},{l:"Total P&L",v:`${sign(pnl)}$${fmt(pnl)}`,c:pnlColor(pnl)},{l:"Positions",v:stats?.open_positions??0,c:C.blue},{l:"Invested",v:`$${fmt(stats?.invested_usd)}`,c:C.yellow}]
+    <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:7,padding:"8px 12px",flexShrink:0}}>
+      {[{l:"Portfolio Value",v:stats?.portfolio_value!=null?`$${fmt(stats.portfolio_value)}`:"—",c:C.blue},
+        {l:"Cash",v:stats?.cash!=null?`$${fmt(stats.cash)}`:"—",c:C.muted},
+        {l:"Win Rate",v:`${wr}%`,c:wr>=50?C.green:C.red},
+        {l:"Total P&L",v:`${sign(pnl)}$${fmt(pnl)}`,c:pnlColor(pnl)},
+        {l:"Positions",v:stats?.open_positions??0,c:C.blue}]
         .map(s=><div key={s.l} style={{background:C.bg2,border:`1px solid ${C.border}`,padding:"9px 11px"}}>
           <div style={{color:C.muted,fontSize:10,textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>{s.l}</div>
           <div style={{fontSize:19,fontWeight:"bold",color:s.c}}>{s.v}</div>
@@ -284,6 +325,15 @@ ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </body>
 </html>"""
 
+from fastapi.responses import FileResponse
+STATIC_DIR = Path(__file__).parent
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon(): return FileResponse(STATIC_DIR / "favicon.ico")
+
+@app.get("/logo192.png", include_in_schema=False)
+def logo192(): return FileResponse(STATIC_DIR / "logo192.png")
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
     return HTMLResponse(INVESTMENTS_HTML)
@@ -299,32 +349,60 @@ def inv_auth(req: AuthRequest):
 # ── Positions ──────────────────────────────────────────────────────────────────
 @app.get("/api/investments/positions")
 def inv_positions():
-    path = TRADER_DIR / "positions.json"
-    if not path.exists():
-        return []
-    positions = json.loads(path.read_text())
+    """Alpaca is the source of truth — only show what's actually held there."""
     try:
         sys.path.insert(0, str(TRADER_DIR))
-        from broker import get_latest_price, load_env
+        from broker import get_latest_price, load_env, _trading_client
         load_env()
+
+        # Load local state for enrichment (entry, stop, target, reason etc.)
+        local = {}
+        path = TRADER_DIR / "positions.json"
+        if path.exists():
+            for ticker, p in json.loads(path.read_text()).items():
+                # Normalise symbol: BTC/USD -> BTCUSD for matching
+                local[ticker.replace("/", "")] = dict(p, ticker=ticker)
+
+        client = _trading_client(paper=False)
+        alpaca_positions = client.get_all_positions()
+
         enriched = []
-        for ticker, p in positions.items():
-            pos = dict(p, ticker=ticker)
+        for ap in alpaca_positions:
+            sym = ap.symbol  # e.g. AAPL, BTCUSD
+            # Find matching local record
+            loc = local.get(sym, {})
+            entry = float(ap.avg_entry_price)
+            current = float(ap.current_price) if ap.current_price else None
+            shares = float(ap.qty)
+
+            # Try live price for more accurate P&L
             try:
-                price = get_latest_price(ticker, paper=False)
-                entry = pos.get("entry_price", 0) or 0
-                shares = pos.get("shares", 0) or 0
-                pos["current_price"] = price
-                pos["live_pnl_usd"] = round((price - entry) * shares, 4)
-                pos["live_pnl_pct"] = round(((price - entry) / entry) * 100, 2) if entry else 0
+                ticker = loc.get("ticker", sym)
+                current = get_latest_price(ticker, paper=False)
             except Exception:
-                pos["current_price"] = None
-                pos["live_pnl_usd"] = None
-                pos["live_pnl_pct"] = None
-            enriched.append(pos)
+                pass
+
+            live_pnl = round((current - entry) * shares, 4) if current else None
+            live_pct = round(((current - entry) / entry) * 100, 2) if current and entry else None
+
+            enriched.append({
+                "ticker": loc.get("ticker", sym),
+                "entry_price": entry,
+                "current_price": current,
+                "live_pnl_usd": live_pnl,
+                "live_pnl_pct": live_pct,
+                "shares": shares,
+                "invested_usd": loc.get("invested_usd", round(entry * shares, 4)),
+                "stop_loss": loc.get("stop_loss"),
+                "take_profit": loc.get("take_profit"),
+                "sentiment_score": loc.get("sentiment_score"),
+                "reason": loc.get("reason"),
+                "opened_at": loc.get("opened_at"),
+                "status": "open",
+            })
         return enriched
-    except Exception:
-        return [dict(p, ticker=t) for t, p in positions.items()]
+    except Exception as e:
+        return []
 
 # ── Trades ─────────────────────────────────────────────────────────────────────
 @app.get("/api/investments/trades")
@@ -348,25 +426,46 @@ def inv_signals():
 # ── Stats ──────────────────────────────────────────────────────────────────────
 @app.get("/api/investments/stats")
 def inv_stats():
-    stats = {"total_trades":0,"wins":0,"losses":0,"win_rate":0,"total_pnl":0.0,"open_positions":0,"invested_usd":0.0}
+    stats = {
+        "total_trades": 0, "wins": 0, "losses": 0, "win_rate": 0,
+        "total_pnl": 0.0, "open_positions": 0, "invested_usd": 0.0,
+        "portfolio_value": None, "cash": None, "buying_power": None,
+    }
     trades_path = TRADER_DIR / "trades.csv"
     positions_path = TRADER_DIR / "positions.json"
+
     if trades_path.exists():
         with open(trades_path) as f:
             for row in csv.DictReader(f):
-                if row.get("status") in ("closed_profit", "closed_loss"):
-                    stats["total_trades"] += 1
+                if row.get("status") in ("closed_profit", "closed_loss", "closed_expired", "closed_manual"):
                     pnl = float(row.get("pnl_usd") or 0)
-                    stats["total_pnl"] += pnl
-                    if pnl >= 0: stats["wins"] += 1
-                    else: stats["losses"] += 1
+                    if pnl != 0:
+                        stats["total_trades"] += 1
+                        stats["total_pnl"] += pnl
+                        if pnl >= 0: stats["wins"] += 1
+                        else: stats["losses"] += 1
         if stats["total_trades"]:
             stats["win_rate"] = round(stats["wins"] / stats["total_trades"] * 100, 1)
         stats["total_pnl"] = round(stats["total_pnl"], 4)
+
     if positions_path.exists():
         positions = json.loads(positions_path.read_text())
-        stats["open_positions"] = len(positions)
-        stats["invested_usd"] = round(sum(p.get("invested_usd", 0) for p in positions.values()), 4)
+        open_pos = {t: p for t, p in positions.items() if p.get("status") == "open"}
+        stats["open_positions"] = len(open_pos)
+        stats["invested_usd"] = round(sum(p.get("invested_usd", 0) for p in open_pos.values()), 4)
+
+    # Live account data from Alpaca
+    try:
+        sys.path.insert(0, str(TRADER_DIR))
+        from broker import get_account, load_env
+        load_env()
+        acct = get_account(paper=False)
+        stats["portfolio_value"] = round(acct["portfolio_value"], 2)
+        stats["cash"] = round(acct["cash"], 2)
+        stats["buying_power"] = round(acct["buying_power"], 2)
+    except Exception:
+        pass
+
     return stats
 
 # ── Chat ───────────────────────────────────────────────────────────────────────
@@ -393,25 +492,152 @@ async def post_chat(req: ChatMsg):
     stats = inv_stats()
     _append_chat("user", req.message)
     prompt = (
-        f"You are a concise trading assistant. Portfolio: win_rate={stats['win_rate']}%, "
-        f"total_pnl=${stats['total_pnl']}, open_positions={stats['open_positions']}, "
-        f"invested=${stats['invested_usd']}. Be brief and insightful. No markdown headers.\n\n"
-        f"User: {req.message}"
+        f"You are a concise trading assistant called HORDE. "
+        f"Portfolio: win_rate={stats['win_rate']}%, total_pnl=${stats['total_pnl']}, "
+        f"open_positions={stats['open_positions']}, invested=${stats['invested_usd']}. "
+        f"Be brief and insightful. No markdown headers.\n\nUser: {req.message}"
     )
+    # Merge OAuth env so Claude CLI can authenticate
+    oauth_env = {}
+    oauth_path = Path.home() / ".claude_oauth_env"
+    if oauth_path.exists():
+        for line in oauth_path.read_text().splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                oauth_env[k.strip()] = v.strip()
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+    env.update(oauth_env)
+    response = "Sorry, I couldn't respond right now — try again."
     try:
         proc = await asyncio.create_subprocess_exec(
             str(CLAUDE_BIN), "-p", prompt, "--output-format", "json", "--dangerously-skip-permissions",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             cwd=str(Path.home() / "bot"), env=env,
         )
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=120)
-        data = json.loads(stdout.decode().strip())
-        response = data.get("result", "Sorry, couldn't respond right now.")
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+        raw = stdout.decode().strip()
+        if raw:
+            data = json.loads(raw)
+            response = data.get("result") or response
+        else:
+            err = stderr.decode().strip()
+            print(f"[chat] Claude returned empty stdout. stderr: {err[:300]}")
+    except asyncio.TimeoutError:
+        response = "Timed out waiting for HORDE — try again."
     except Exception as e:
-        response = f"Error: {e}"
+        print(f"[chat] error: {e}")
     _append_chat("assistant", response)
     return {"response": response}
+
+# ── Alpaca manual-close sync ──────────────────────────────────────────────────
+TRADES_FIELDS = [
+    "opened_at","closed_at","ticker","is_etf","entry_price","close_price",
+    "shares","invested_usd","stop_loss","take_profit","rr_ratio",
+    "status","pnl_usd","sentiment_score","reason",
+]
+
+@app.post("/api/investments/sync")
+def sync_alpaca_closes():
+    """Detect positions closed manually in Alpaca and record them in trades.csv."""
+    sys.path.insert(0, str(TRADER_DIR))
+    from broker import _trading_client, load_env
+    from alpaca.trading.requests import GetOrdersRequest
+    from alpaca.trading.enums import QueryOrderStatus, OrderSide as AS
+    load_env()
+
+    client = _trading_client(paper=False)
+    positions_path = TRADER_DIR / "positions.json"
+    trades_path    = TRADER_DIR / "trades.csv"
+
+    if not positions_path.exists():
+        return {"synced": 0, "tickers": []}
+
+    positions = json.loads(positions_path.read_text())
+
+    # Symbols currently held in Alpaca
+    try:
+        held = {p.symbol for p in client.get_all_positions()}
+    except Exception as e:
+        return {"error": str(e)}
+
+    # Already-recorded tickers (avoid dupes)
+    recorded = set()
+    if trades_path.exists():
+        with open(trades_path) as f:
+            for row in csv.DictReader(f):
+                if row.get("status", "").startswith("closed"):
+                    recorded.add(f"{row['ticker']}:{row.get('opened_at','')}")
+
+    synced, to_remove = 0, []
+
+    for ticker, pos in positions.items():
+        alpaca_sym = ticker.replace("/", "")
+        if alpaca_sym in held:
+            continue  # still open in Alpaca
+
+        dedup_key = f"{ticker}:{pos.get('opened_at','')}"
+        if dedup_key in recorded:
+            to_remove.append(ticker)
+            continue
+
+        # Find the most recent filled sell order for this symbol
+        close_price, closed_at = None, None
+        try:
+            orders = client.get_orders(GetOrdersRequest(
+                status=QueryOrderStatus.CLOSED,
+                symbols=[alpaca_sym],
+                limit=10,
+            ))
+            for order in sorted(orders, key=lambda o: o.filled_at or o.updated_at or datetime.min, reverse=True):
+                if order.side == AS.SELL and order.filled_avg_price:
+                    close_price = float(order.filled_avg_price)
+                    closed_at   = str(order.filled_at or order.updated_at)[:19].replace("T", " ")
+                    break
+        except Exception as e:
+            print(f"[sync] order fetch failed for {ticker}: {e}")
+
+        if close_price is None:
+            close_price = pos.get("entry_price", 0)  # worst case — no P&L distortion
+
+        entry  = float(pos.get("entry_price") or 0)
+        shares = float(pos.get("shares") or 0)
+        pnl    = round((close_price - entry) * shares, 4)
+
+        trade = {
+            "opened_at":       pos.get("opened_at", ""),
+            "closed_at":       closed_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "ticker":          ticker,
+            "is_etf":          pos.get("is_etf", False),
+            "entry_price":     entry,
+            "close_price":     close_price,
+            "shares":          shares,
+            "invested_usd":    pos.get("invested_usd", round(entry * shares, 4)),
+            "stop_loss":       pos.get("stop_loss", ""),
+            "take_profit":     pos.get("take_profit", ""),
+            "rr_ratio":        "",
+            "status":          "closed_manual",
+            "pnl_usd":         pnl,
+            "sentiment_score": pos.get("sentiment_score", ""),
+            "reason":          pos.get("reason", ""),
+        }
+
+        write_header = not trades_path.exists()
+        with open(trades_path, "a", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=TRADES_FIELDS)
+            if write_header:
+                w.writeheader()
+            w.writerow(trade)
+
+        to_remove.append(ticker)
+        synced += 1
+
+    # Remove synced positions from positions.json
+    for ticker in to_remove:
+        positions.pop(ticker, None)
+    if to_remove:
+        positions_path.write_text(json.dumps(positions, indent=2))
+
+    return {"synced": synced, "tickers": to_remove}
 
 # ── Health ─────────────────────────────────────────────────────────────────────
 @app.get("/api/health")
